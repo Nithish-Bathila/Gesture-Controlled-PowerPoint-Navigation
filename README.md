@@ -50,7 +50,7 @@ Gesture must be **held for 2 seconds** to avoid accidental triggers.
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/Nithish-Bathila/gesture-controlled-presentation.git
+git clone https://github.com/Nithish-Bathila/Gesture-Controlled-PowerPoint-Navigation.git
 cd gesture-controlled-presentation
 ```
 
