@@ -93,6 +93,7 @@ gestures.png            # Gesture reference image
 icon.png / icon.ico     # Application icons
 install_script.iss      # Inno Setup installer script
 requirements.txt        # Python dependencies
+Installer link          # Google Drive link for the installer
 .gitignore
 ```
 
