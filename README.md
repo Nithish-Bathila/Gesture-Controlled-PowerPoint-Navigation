@@ -90,6 +90,7 @@ main.py                 # Entry point with system tray integration
 controller.py           # PowerPoint control module (pywin32)
 gesture_detector.py     # Gesture detection module (MediaPipe)
 gestures.png            # Gesture reference image
+welcome.png             # User Guide image
 icon.png / icon.ico     # Application icons
 install_script.iss      # Inno Setup installer script
 requirements.txt        # Python dependencies
