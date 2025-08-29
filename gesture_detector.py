@@ -1,15 +1,3 @@
-"""
-Gesture Detection Module
-Uses MediaPipe Hands to detect:
-- Palm (start slideshow)
-- Fist (end slideshow)
-- Number 1 (next slide)
-- Number 2 (previous slide)
-
-Functions:
-- detect_gesture(frame): returns detected gesture string or None
-"""
-
 import cv2
 import mediapipe as mp
 import time
@@ -51,11 +39,8 @@ class GestureDetector:
         confirmed_gesture = self.handle_hold(gesture)
         return confirmed_gesture
 
-    def count_fingers_open(self, landmarks):
-        """
-        Returns a list indicating which fingers are open (1=open, 0=closed).
-        Order: [thumb, index, middle, ring, pinky]
-        """
+    @staticmethod
+    def count_fingers_open(landmarks):
         fingers = []
 
         # Thumb: compare tip and IP joint x for left/right hand
@@ -77,9 +62,6 @@ class GestureDetector:
         return fingers
 
     def handle_hold(self, gesture):
-        """
-        Confirms gesture only if held for required seconds.
-        """
         current_time = time.time()
 
         if gesture != self.prev_gesture:

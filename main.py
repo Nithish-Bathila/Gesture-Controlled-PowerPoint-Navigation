@@ -1,8 +1,3 @@
-"""
-Main Entry Point
-Gesture detection with system tray integration.
-Show/Hide Preview and About menu items.
-"""
 import os
 import sys
 import threading
@@ -14,38 +9,63 @@ from gesture_detector import GestureDetector
 import controller
 import tkinter as tk
 from tkinter import messagebox
-from PIL import Image, ImageTk
-
+from PIL import Image
+import customtkinter as ctk
+from typing import Optional
 
 running = True
 show_preview_window = False
 gesture_detector = GestureDetector()
-cap = None  # Global VideoCapture
+cap: Optional[cv2.VideoCapture] = None
+icon: Optional[pystray.Icon] = None  # Global tray icon
 
-def resource_path(relative_path):
-    """Get absolute path to resource, works for dev and for PyInstaller .exe"""
-    if hasattr(sys, '_MEIPASS'):
-        return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
+ctk.set_appearance_mode("System")
+ctk.set_default_color_theme("blue")
+
+
+def resource_path(relative_path: str) -> str:
+    try:
+        # noinspection PyProtectedMember
+        base_path = sys._MEIPASS
+    except AttributeError:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+
+def is_first_run() -> bool:
+    appdata = os.getenv('APPDATA')
+    if not appdata:
+        print("[ERROR] APPDATA environment variable not found.")
+        return False
+    first_run_file = os.path.join(appdata, 'GestureControl_first_run.flag')
+    if not os.path.exists(first_run_file):
+        try:
+            with open(first_run_file, 'w') as f:
+                f.write("First run completed.")
+            print(f"[INFO] Created first run flag at {first_run_file}")
+        except Exception as e:
+            print(f"[WARNING] Failed to write first run flag: {e}")
+        return True
+    else:
+        print(f"[INFO] First run flag exists at {first_run_file}")
+    return False
+
 
 def gesture_loop():
-    """
-    Background gesture detection loop.
-    """
     global running, cap, show_preview_window
+    assert cap is not None
 
     while running:
-        if cap is None:
+        if not cap.isOpened():
             time.sleep(0.1)
             continue
 
         ret, frame = cap.read()
         if not ret:
+            time.sleep(0.05)
             continue
 
         frame = cv2.flip(frame, 1)
-
-        # Detect gesture
         gesture = gesture_detector.detect_gesture(frame)
 
         if controller.is_powerpoint_open():
@@ -58,66 +78,62 @@ def gesture_loop():
             elif gesture == 'prev_slide':
                 controller.prev_slide()
 
-        # Show preview if enabled
         if show_preview_window:
-            cv2.namedWindow("Gesture Control Preview", cv2.WINDOW_NORMAL)
-            cv2.imshow("Gesture Control Preview", frame)
-            # Check if window was closed using the close button
-            if cv2.getWindowProperty("Gesture Control Preview", cv2.WND_PROP_VISIBLE) < 1:
-                hide_camera_preview()
+            try:
+                cv2.imshow("Gesture Control Preview", frame)
+                if (cv2.getWindowProperty("Gesture Control Preview", cv2.WND_PROP_VISIBLE) < 1 or
+                        (cv2.waitKey(1) & 0xFF == 27)):
+                    hide_camera_preview()
+            except cv2.error:
+                pass
         else:
-            cv2.destroyAllWindows()
+            try:
+                cv2.destroyWindow("Gesture Control Preview")
+            except cv2.error:
+                pass
 
-        time.sleep(0.01)
-
-    cap.release()
+    if cap:
+        cap.release()
     cv2.destroyAllWindows()
 
-def show_camera_preview(icon, item):
-    """
-    Enables preview window flag.
-    """
+
+def show_camera_preview():
     global show_preview_window
     show_preview_window = True
-    update_tray_menu(icon)
+    update_tray_menu()
 
-def hide_camera_preview(icon=None, item=None):
-    """
-    Disables preview window flag.
-    """
+
+def hide_camera_preview():
     global show_preview_window
     show_preview_window = False
-    update_tray_menu(icon)
+    update_tray_menu()
+
 
 def show_about():
-    """
-    Shows About window.
-    """
     root = tk.Tk()
     root.withdraw()
     messagebox.showinfo("About Gesture Control",
                         "Gesture-Controlled PowerPoint Navigation\n"
-                        "Version 1.7\n\n"
+                        "Version 2.9\n\n"
                         "Developed by Nithish\n"
                         "Uses OpenCV, MediaPipe, pywin32, pystray")
     root.destroy()
 
-def quit_app(icon, item):
-    """
-    Exit callback.
-    """
+
+def quit_app(icon_: pystray.Icon, _: object):
     global running
     running = False
-    icon.stop()
+    icon_.stop()
 
-def update_tray_menu(icon):
-    """
-    Updates tray menu to toggle Show/Hide Preview option dynamically.
-    """
+
+def update_tray_menu():
+    global icon
+    if icon is None:
+        return
     menu = (
-        item('Hide Preview', lambda: hide_camera_preview(icon)) if show_preview_window else
-        item('Show Preview', lambda: show_camera_preview(icon, None)),
-        item('Gesture Reference', lambda: threading.Thread(target=show_gesture_reference, daemon=True).start()),
+        item('Hide Preview', lambda: hide_camera_preview()) if show_preview_window else
+        item('Show Preview', lambda: show_camera_preview()),
+        item('User Guide', lambda: threading.Thread(target=show_user_guide, daemon=True).start()),
         item('About', lambda: threading.Thread(target=show_about, daemon=True).start()),
         item('Exit', quit_app)
     )
@@ -125,45 +141,116 @@ def update_tray_menu(icon):
     icon.update_menu()
 
 
-def show_gesture_reference():
-    window = tk.Tk()
-    window.title("Gesture Reference")
-    window.resizable(False, False)  # Make window non-resizable
+def show_user_guide():
+    class UserGuideWindow(ctk.CTk):
+        def __init__(self):
+            super().__init__()
+            self.title("Welcome to Gesture Control")
 
-    img = Image.open(resource_path("gestures.png"))
-    tk_img = ImageTk.PhotoImage(img)
+            window_width = 560
+            window_height = 850
+            screen_width = self.winfo_screenwidth()
+            screen_height = self.winfo_screenheight()
+            x = int((screen_width / 2) - (window_width / 2))
+            y = int((screen_height / 2) - (window_height / 2))
+            self.geometry(f"{window_width}x{window_height}+{x}+{y}")
+            self.resizable(False, False)
 
-    label = tk.Label(window, image=tk_img)
-    label.image = tk_img  # Keep reference
-    label.pack()
+            self.current_page = 0
 
-    window.mainloop()
+            try:
+                img1 = Image.open(resource_path("welcome.png")).resize((560, 781), Image.Resampling.LANCZOS)
+                img2 = Image.open(resource_path("gestures.png")).resize((560, 781), Image.Resampling.LANCZOS)
+                self.images = [
+                    ctk.CTkImage(light_image=img1, size=(560, 781)),
+                    ctk.CTkImage(light_image=img2, size=(560, 781))
+                ]
+            except Exception as e:
+                tk.messagebox.showerror("Error", f"Could not load guide images: {e}")
+                self.destroy()
+                return
+
+            self.image_label = ctk.CTkLabel(self, image=self.images[0], text="")
+            self.image_label.pack(pady=(20, 10))
+
+            self.button_frame = ctk.CTkFrame(self)
+            self.button_frame.pack(pady=(0, 10))
+
+            self.prev_btn = ctk.CTkButton(self.button_frame, text="Previous", command=self.prev_page, width=100)
+            self.prev_btn.grid(row=0, column=0, padx=10)
+
+            self.next_btn = ctk.CTkButton(self.button_frame, text="Next", command=self.next_page, width=100)
+            self.next_btn.grid(row=0, column=1, padx=10)
+
+            self.exit_btn = ctk.CTkButton(self.button_frame, text="Exit", command=self.destroy, width=100)
+            self.exit_btn.grid(row=0, column=2, padx=10)
+
+            self.bind("<Right>", lambda event: self.next_page())
+            self.bind("<Left>", lambda event: self.prev_page())
+            self.focus_set()
+
+            self.update_buttons()
+
+        def next_page(self):
+            if self.current_page < len(self.images) - 1:
+                self.current_page += 1
+                self.image_label.configure(image=self.images[self.current_page])
+            self.update_buttons()
+
+        def prev_page(self):
+            if self.current_page > 0:
+                self.current_page -= 1
+                self.image_label.configure(image=self.images[self.current_page])
+            self.update_buttons()
+
+        def update_buttons(self):
+            self.prev_btn.configure(state="normal" if self.current_page > 0 else "disabled")
+            self.next_btn.configure(state="normal" if self.current_page < len(self.images) - 1 else "disabled")
+
+    app = UserGuideWindow()
+    app.mainloop()
 
 
 def setup_tray():
-    """
-    Initializes system tray icon and menu.
-    """
-    icon_image = Image.open(resource_path('icon.png'))
+    global icon
+    try:
+        icon_image = Image.open(resource_path('icon.png'))
+    # Catching general Exception to ensure unexpected crashes are logged
+    except Exception:
+        print("Could not load tray icon.")
+        return
+
     icon = pystray.Icon("GestureControl", icon_image, "Gesture Control")
-
-    # Initial menu setup
-    update_tray_menu(icon)
-
+    update_tray_menu()
     icon.run()
 
 
 def main():
-    """
-    Starts VideoCapture, gesture detection thread, and tray icon.
-    """
-    global cap
-    cap = cv2.VideoCapture(0)
+    try:
+        if getattr(sys, 'frozen', False):
+            os.chdir(os.path.dirname(sys.executable))
+        else:
+            os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-    gesture_thread = threading.Thread(target=gesture_loop, daemon=True)
-    gesture_thread.start()
+        global cap
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            print("Error: Cannot access webcam.")
+            return
 
-    setup_tray()
+        gesture_thread = threading.Thread(target=gesture_loop, daemon=True)
+        gesture_thread.start()
+
+        if is_first_run():
+            try:
+                show_user_guide()
+            except Exception as e:
+                print(f"[ERROR] Failed to show user guide: {e}")
+
+        setup_tray()
+    except Exception as e:
+        print(f"[FATAL] Unexpected error occurred: {e}")
+
 
 if __name__ == "__main__":
     main()
